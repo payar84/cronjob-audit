@@ -1,46 +1,71 @@
-"""Report generation for cron audit validation results."""
+"""Generate JSON and plain-text audit reports from validation results."""
+
+from __future__ import annotations
 
 import json
-from typing import List, IO
-from .validator import ValidationResult
+from typing import List
+
+from cronjob_audit.validator import ValidationResult
+from cronjob_audit.scheduler import describe, next_run, SchedulerError
 
 
 def _summary(results: List[ValidationResult]) -> dict:
-    total = len(results)
     valid = sum(1 for r in results if r.is_valid)
-    invalid = total - valid
-    warned = sum(1 for r in results if r.warnings)
-    return {"total": total, "valid": valid, "invalid": invalid, "with_warnings": warned}
+    warnings = sum(1 for r in results if r.warnings)
+    errors = sum(1 for r in results if r.errors)
+    return {
+        "total": len(results),
+        "valid": valid,
+        "with_warnings": warnings,
+        "with_errors": errors,
+    }
 
 
-def generate_json_report(results: List[ValidationResult], stream: IO[str]) -> None:
-    """Write a JSON report of validation results to the given stream."""
+def _enrich(result: ValidationResult) -> dict:
+    """Attach next-run time and description to a serialised ValidationResult."""
+    data = result.to_dict()
+    expr = result.entry.expression
+    if expr is not None:
+        try:
+            data["next_run"] = next_run(expr).isoformat()
+        except SchedulerError:
+            data["next_run"] = None
+        data["description"] = describe(expr)
+    else:
+        data["next_run"] = None
+        data["description"] = None
+    return data
+
+
+def generate_json_report(results: List[ValidationResult]) -> str:
+    """Return a JSON string containing the full audit report."""
     report = {
         "summary": _summary(results),
-        "entries": [r.to_dict() for r in results],
+        "entries": [_enrich(r) for r in results],
     }
-    json.dump(report, stream, indent=2)
-    stream.write("\n")
+    return json.dumps(report, indent=2)
 
 
-def generate_text_report(results: List[ValidationResult], stream: IO[str]) -> None:
-    """Write a human-readable text report to the given stream."""
+def generate_text_report(results: List[ValidationResult]) -> str:
+    """Return a human-readable plain-text audit report."""
+    lines: List[str] = []
     summary = _summary(results)
-    stream.write("=== Cron Audit Report ===\n")
-    stream.write(
+    lines.append("=== Cron Audit Report ===")
+    lines.append(
         f"Total: {summary['total']}  "
         f"Valid: {summary['valid']}  "
-        f"Invalid: {summary['invalid']}  "
-        f"Warnings: {summary['with_warnings']}\n"
+        f"Warnings: {summary['with_warnings']}  "
+        f"Errors: {summary['with_errors']}"
     )
-    stream.write("\n")
-
-    for r in results:
-        status = "OK" if r.is_valid else "FAIL"
-        stream.write(f"[{status}] {r.service} / {r.name}  ({r.schedule})\n")
-        for err in r.errors:
-            stream.write(f"  ERROR: {err}\n")
-        for warn in r.warnings:
-            stream.write(f"  WARN:  {warn}\n")
-
-    stream.write("\n=== End of Report ===\n")
+    lines.append("")
+    for result in results:
+        status = "OK" if result.is_valid else "FAIL"
+        expr = result.entry.expression
+        desc = describe(expr) if expr else "(unparsed)"
+        lines.append(f"[{status}] {result.entry.raw!r}")
+        lines.append(f"       {desc}")
+        for w in result.warnings:
+            lines.append(f"  WARN  {w}")
+        for e in result.errors:
+            lines.append(f"  ERROR {e}")
+    return "\n".join(lines)
