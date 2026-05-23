@@ -77,3 +77,20 @@ def validate_all(entries: List[dict]) -> List[ValidationResult]:
         )
         results.append(result)
     return results
+
+
+def summarise_results(results: List[ValidationResult]) -> dict:
+    """Return a summary dict with counts of valid, invalid, and warned entries.
+
+    Args:
+        results: A list of ValidationResult objects to summarise.
+
+    Returns:
+        A dict with keys ``total``, ``valid``, ``invalid``, and ``with_warnings``.
+    """
+    return {
+        "total": len(results),
+        "valid": sum(1 for r in results if r.is_valid),
+        "invalid": sum(1 for r in results if not r.is_valid),
+        "with_warnings": sum(1 for r in results if r.warnings),
+    }
