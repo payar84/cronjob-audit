@@ -55,6 +55,17 @@ def _render(results, fmt: str) -> str:
     return generate_text_report(results)
 
 
+def _load_and_validate(path: str):
+    """Load entries from *path* and run validation, returning validated results.
+
+    Raises ``SystemExit`` (via ``return 1`` in the caller) on loader failure;
+    instead this helper raises ``LoaderError`` so the caller can handle it
+    uniformly and print a consistent error message.
+    """
+    entries = load_entries(path)
+    return list(validate_all(entries))
+
+
 def main(argv: Optional[List[str]] = None) -> int:
     parser = _build_parser()
     args = parser.parse_args(argv)
@@ -62,11 +73,10 @@ def main(argv: Optional[List[str]] = None) -> int:
     collections = []
     for path in args.files:
         try:
-            entries = load_entries(path)
+            results = _load_and_validate(path)
         except LoaderError as exc:
             print(f"[error] Could not load {path!r}: {exc}", file=sys.stderr)
             return 1
-        results = list(validate_all(entries))
         collections.append(results)
 
     merge_result = merge(*collections, prefer_service=args.prefer_service)
