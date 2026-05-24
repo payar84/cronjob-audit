@@ -98,7 +98,7 @@ class TestAnnotate:
 
 class TestAnnotateAll:
     def test_returns_list_of_annotated_entries(self):
-        results = [_make_result(), _make_result(schedule="* * * * *", service="alerts")]
+        results = [_make_result(), _make_result(schedule="* * * * *")]
         annotated_list = annotate_all(results)
         assert isinstance(annotated_list, list)
         assert all(isinstance(a, AnnotatedEntry) for a in annotated_list)
@@ -106,7 +106,7 @@ class TestAnnotateAll:
     def test_length_matches_input(self):
         results = [_make_result() for _ in range(5)]
         annotated_list = annotate_all(results)
-        assert len(annotated_list) == len(results)
+        assert len(annotated_list) == 5
 
     def test_empty_input_returns_empty_list(self):
         assert annotate_all([]) == []
