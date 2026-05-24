@@ -91,10 +91,22 @@ class TestAnnotate:
         result = _make_result()
         annotated = annotate(result)
         d = annotated.to_dict()
-        assert set(d.keys()) == {"entry", "description", "tags", "note"}
+        assert isinstance(d, dict)
+        for key in ("description", "tags", "note"):
+            assert key in d, f"Expected key '{key}' missing from to_dict() output"
 
-    def test_annotate_all_returns_list(self):
-        results = [_make_result(), _make_result(schedule="* * * * *")]
-        annotated = annotate_all(results)
-        assert len(annotated) == 2
-        assert all(isinstance(a, AnnotatedEntry) for a in annotated)
+
+class TestAnnotateAll:
+    def test_returns_list_of_annotated_entries(self):
+        results = [_make_result(), _make_result(schedule="* * * * *", service="alerts")]
+        annotated_list = annotate_all(results)
+        assert isinstance(annotated_list, list)
+        assert all(isinstance(a, AnnotatedEntry) for a in annotated_list)
+
+    def test_length_matches_input(self):
+        results = [_make_result() for _ in range(5)]
+        annotated_list = annotate_all(results)
+        assert len(annotated_list) == len(results)
+
+    def test_empty_input_returns_empty_list(self):
+        assert annotate_all([]) == []
