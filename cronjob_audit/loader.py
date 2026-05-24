@@ -28,6 +28,15 @@ def _load_raw(path: Path) -> dict:
             raise LoaderError(f"Unsupported file format: {suffix!r}")
 
 
+def _validate_job(job: object, index: int) -> None:
+    """Validate a single job entry, raising LoaderError with a useful message on failure."""
+    if not isinstance(job, dict):
+        raise LoaderError(f"Job at index {index} must be a mapping, got: {type(job).__name__}")
+    if "schedule" not in job:
+        name = job.get("name", f"<index {index}>")
+        raise LoaderError(f"Job {name!r} is missing required field 'schedule'")
+
+
 def load_entries(path: str) -> List[dict]:
     """Load cron entries from a YAML or JSON file.
 
@@ -54,9 +63,8 @@ def load_entries(path: str) -> List[dict]:
         raise LoaderError("'jobs' must be a list")
 
     entries = []
-    for job in jobs:
-        if not isinstance(job, dict):
-            raise LoaderError(f"Each job must be a mapping, got: {type(job)}")
+    for index, job in enumerate(jobs):
+        _validate_job(job, index)
         entries.append({
             "service": service,
             "name": job.get("name", "unnamed"),
