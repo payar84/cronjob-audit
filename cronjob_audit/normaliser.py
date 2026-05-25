@@ -79,6 +79,19 @@ def _normalise_field(token: str, mapping: Dict[str, str]) -> str:
     return ",".join(normalised)
 
 
+def _validate_step(step: str, field_name: str) -> None:
+    """Raise NormaliseError if *step* is not a positive integer.
+
+    Steps like ``*/0`` or ``*/abc`` are invalid and will cause silent
+    misbehaviour in most cron implementations, so we reject them early.
+    """
+    if not step.isdigit() or int(step) == 0:
+        raise NormaliseError(
+            f"Invalid step value '{step}' in field '{field_name}': "
+            "step must be a positive integer"
+        )
+
+
 def normalise(schedule: str) -> NormaliseResult:
     """Return a NormaliseResult with the canonical form of *schedule*."""
     original = schedule.strip()
@@ -103,19 +116,4 @@ def normalise(schedule: str) -> NormaliseResult:
             f"Expected 5 or 6 fields, got {len(fields)}: '{original}'"
         )
 
-    # minute hour dom month dow [command]
-    field_mappings = [{}, {}, {}, _MONTH_NAMES, _DOW_NAMES]
-    normalised_fields = []
-    for i, (f, mapping) in enumerate(zip(fields[:5], field_mappings)):
-        nf = _normalise_field(f, mapping)
-        if nf != f:
-            changes.append(f"field {i}: '{f}' -> '{nf}'")
-        normalised_fields.append(nf)
-
-    canonical = " ".join(normalised_fields)
-    return NormaliseResult(
-        original=original,
-        canonical=canonical,
-        alias_expanded=alias_expanded,
-        changes=changes,
-    )
+   
