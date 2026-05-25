@@ -1,59 +1,64 @@
-"""Pre-built AlertRule definitions for common audit scenarios."""
+"""Built-in AlertRule definitions for common cron audit findings."""
 from __future__ import annotations
 
 from cronjob_audit.alerter import AlertRule
+from cronjob_audit.validator import ValidationResult
 
 
-def _schedule(result) -> str:  # type: ignore[return]
-    return getattr(result, "schedule", "") or getattr(
-        getattr(result, "entry", None), "schedule", ""
-    )
+def _schedule(result: ValidationResult) -> str:
+    return result.entry.get("schedule", "")
 
 
-RULE_INVALID: AlertRule = AlertRule(
-    name="invalid",
-    description="Entry failed validation with at least one error.",
+rule_invalid: AlertRule = AlertRule(
+    name="invalid_schedule",
+    description="Cron expression has one or more validation errors.",
+    severity="error",
     predicate=lambda r: bool(r.errors),
 )
 
-RULE_WARNING: AlertRule = AlertRule(
-    name="warning",
-    description="Entry produced at least one validation warning.",
-    predicate=lambda r: bool(r.warnings),
+rule_warning: AlertRule = AlertRule(
+    name="schedule_warning",
+    description="Cron expression triggered a validation warning.",
+    severity="warning",
+    predicate=lambda r: bool(r.warnings) and not r.errors,
 )
 
-RULE_EVERY_MINUTE: AlertRule = AlertRule(
-    name="every_minute",
-    description="Schedule fires every minute — may cause excessive load.",
-    predicate=lambda r: _schedule(r) == "* * * * *",
+rule_every_minute: AlertRule = AlertRule(
+    name="every_minute_schedule",
+    description="Job runs every minute (* * * * *), which may cause resource pressure.",
+    severity="warning",
+    predicate=lambda r: _schedule(r).strip() == "* * * * *",
 )
 
-RULE_EVERY_HOUR: AlertRule = AlertRule(
-    name="every_hour",
-    description="Schedule fires every hour (minute wildcard).",
-    predicate=lambda r: _schedule(r).startswith("* "),
+rule_missing_service: AlertRule = AlertRule(
+    name="missing_service",
+    description="Entry has no service field or service is empty.",
+    severity="warning",
+    predicate=lambda r: not r.entry.get("service", "").strip(),
 )
 
-RULE_NO_SERVICE: AlertRule = AlertRule(
-    name="no_service",
-    description="Entry has no service label.",
-    predicate=lambda r: not getattr(
-        getattr(r, "entry", r), "service", None
-    ),
+rule_missing_id: AlertRule = AlertRule(
+    name="missing_entry_id",
+    description="Entry has no id field or id is empty.",
+    severity="warning",
+    predicate=lambda r: not str(r.entry.get("id", "")).strip(),
 )
 
-RULE_MIDNIGHT_ONLY: AlertRule = AlertRule(
-    name="midnight_only",
-    description="Schedule runs only at midnight (0 0 * * *).",
-    predicate=lambda r: _schedule(r) in {"0 0 * * *", "@midnight", "@daily"},
+rule_high_frequency: AlertRule = AlertRule(
+    name="high_frequency_schedule",
+    description="Job schedule runs more than once per minute via step values.",
+    severity="error",
+    predicate=lambda r: (
+        len(_schedule(r).split()) == 5
+        and _schedule(r).split()[0].startswith("*/")
+        and int(_schedule(r).split()[0][2:]) < 1
+    ) if len(_schedule(r).split()) == 5 and _schedule(r).split()[0].startswith("*/") else False,
 )
 
-# Convenience collection of all built-in rules
-ALL_RULES: list = [
-    RULE_INVALID,
-    RULE_WARNING,
-    RULE_EVERY_MINUTE,
-    RULE_EVERY_HOUR,
-    RULE_NO_SERVICE,
-    RULE_MIDNIGHT_ONLY,
+DEFAULT_RULES: list[AlertRule] = [
+    rule_invalid,
+    rule_warning,
+    rule_every_minute,
+    rule_missing_service,
+    rule_missing_id,
 ]
