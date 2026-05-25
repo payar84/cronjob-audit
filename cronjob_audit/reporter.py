@@ -37,6 +37,21 @@ def _enrich(result: ValidationResult) -> dict:
     return data
 
 
+def _format_entry(result: ValidationResult) -> List[str]:
+    """Return lines representing a single entry in the plain-text report."""
+    lines: List[str] = []
+    status = "OK" if result.is_valid else "FAIL"
+    expr = result.entry.expression
+    desc = describe(expr) if expr else "(unparsed)"
+    lines.append(f"[{status}] {result.entry.raw!r}")
+    lines.append(f"       {desc}")
+    for w in result.warnings:
+        lines.append(f"  WARN  {w}")
+    for e in result.errors:
+        lines.append(f"  ERROR {e}")
+    return lines
+
+
 def generate_json_report(results: List[ValidationResult]) -> str:
     """Return a JSON string containing the full audit report."""
     report = {
@@ -59,13 +74,5 @@ def generate_text_report(results: List[ValidationResult]) -> str:
     )
     lines.append("")
     for result in results:
-        status = "OK" if result.is_valid else "FAIL"
-        expr = result.entry.expression
-        desc = describe(expr) if expr else "(unparsed)"
-        lines.append(f"[{status}] {result.entry.raw!r}")
-        lines.append(f"       {desc}")
-        for w in result.warnings:
-            lines.append(f"  WARN  {w}")
-        for e in result.errors:
-            lines.append(f"  ERROR {e}")
+        lines.extend(_format_entry(result))
     return "\n".join(lines)
