@@ -1,78 +1,68 @@
-"""Generate JSON and plain-text audit reports from validation results."""
-
+"""Generate human-readable and machine-readable reports from validation results."""
 from __future__ import annotations
 
 import json
-from typing import List
+from typing import Any, Dict, List
 
 from cronjob_audit.validator import ValidationResult
-from cronjob_audit.scheduler import describe, next_run, SchedulerError
+from cronjob_audit.scorer import score, ScoreResult
 
 
-def _summary(results: List[ValidationResult]) -> dict:
-    valid = sum(1 for r in results if r.is_valid)
-    warnings = sum(1 for r in results if r.warnings)
-    errors = sum(1 for r in results if r.errors)
+def _summary(results: List[ValidationResult]) -> Dict[str, Any]:
+    scored: ScoreResult = score(results)
     return {
-        "total": len(results),
-        "valid": valid,
-        "with_warnings": warnings,
-        "with_errors": errors,
+        "total": scored.total,
+        "valid": scored.valid,
+        "warnings": scored.warnings,
+        "errors": scored.errors,
+        "score": scored.score,
+        "grade": scored.grade,
     }
 
 
-def _enrich(result: ValidationResult) -> dict:
-    """Attach next-run time and description to a serialised ValidationResult."""
-    data = result.to_dict()
-    expr = result.entry.expression
-    if expr is not None:
-        try:
-            data["next_run"] = next_run(expr).isoformat()
-        except SchedulerError:
-            data["next_run"] = None
-        data["description"] = describe(expr)
-    else:
-        data["next_run"] = None
-        data["description"] = None
-    return data
+def _enrich(result: ValidationResult) -> Dict[str, Any]:
+    status = "error" if not result.is_valid else ("warning" if result.warnings else "ok")
+    return {
+        "entry_id": result.entry_id,
+        "service": result.service,
+        "schedule": result.schedule,
+        "status": status,
+        "errors": result.errors,
+        "warnings": result.warnings,
+    }
 
 
-def _format_entry(result: ValidationResult) -> List[str]:
-    """Return lines representing a single entry in the plain-text report."""
-    lines: List[str] = []
-    status = "OK" if result.is_valid else "FAIL"
-    expr = result.entry.expression
-    desc = describe(expr) if expr else "(unparsed)"
-    lines.append(f"[{status}] {result.entry.raw!r}")
-    lines.append(f"       {desc}")
-    for w in result.warnings:
-        lines.append(f"  WARN  {w}")
-    for e in result.errors:
-        lines.append(f"  ERROR {e}")
-    return lines
+def _format_entry(result: ValidationResult) -> str:
+    status = "ERROR" if not result.is_valid else ("WARN" if result.warnings else "OK")
+    lines = [f"[{status}] {result.entry_id} ({result.service}) — {result.schedule}"]
+    for err in result.errors:
+        lines.append(f"  error   : {err}")
+    for warn in result.warnings:
+        lines.append(f"  warning : {warn}")
+    return "\n".join(lines)
 
 
 def generate_json_report(results: List[ValidationResult]) -> str:
-    """Return a JSON string containing the full audit report."""
-    report = {
+    """Return a JSON string containing a summary and per-entry details."""
+    payload = {
         "summary": _summary(results),
         "entries": [_enrich(r) for r in results],
     }
-    return json.dumps(report, indent=2)
+    return json.dumps(payload, indent=2)
 
 
 def generate_text_report(results: List[ValidationResult]) -> str:
-    """Return a human-readable plain-text audit report."""
-    lines: List[str] = []
+    """Return a plain-text report suitable for console output."""
     summary = _summary(results)
-    lines.append("=== Cron Audit Report ===")
-    lines.append(
-        f"Total: {summary['total']}  "
-        f"Valid: {summary['valid']}  "
-        f"Warnings: {summary['with_warnings']}  "
-        f"Errors: {summary['with_errors']}"
+    header = (
+        f"Cron Audit Report\n"
+        f"{'=' * 40}\n"
+        f"Total : {summary['total']}  "
+        f"Valid : {summary['valid']}  "
+        f"Warnings : {summary['warnings']}  "
+        f"Errors : {summary['errors']}\n"
+        f"Score : {summary['score']:.1f} / 100  Grade : {summary['grade']}\n"
+        f"{'=' * 40}"
     )
-    lines.append("")
-    for result in results:
-        lines.extend(_format_entry(result))
-    return "\n".join(lines)
+    body = "\n".join(_format_entry(r) for r in results)
+    return f"{header}\n{body}" if body else header
