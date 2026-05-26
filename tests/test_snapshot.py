@@ -57,6 +57,14 @@ class TestCapture:
         e = snap.entries[1]
         assert "frequent" in e["warnings"]
 
+    def test_errors_captured(self, results):
+        results_with_error = results + [
+            _make_result("j3", "svc-c", "0 0 * * *", errors=["invalid schedule"])
+        ]
+        snap = capture("v1", results_with_error)
+        e = snap.entries[2]
+        assert "invalid schedule" in e["errors"]
+
     def test_empty_results_gives_empty_snapshot(self):
         snap = capture("empty", [])
         assert snap.entries == []
@@ -82,6 +90,15 @@ class TestSaveAndLoad:
         save_snapshot(capture("v", results), str(path))
         data = json.loads(path.read_text())
         assert data["label"] == "v"
+
+    def test_round_trip_preserves_entries(self, results, tmp_path):
+        """Verify entry contents survive a full save/load cycle."""
+        path = str(tmp_path / "snap.json")
+        snap = capture("rt", results)
+        save_snapshot(snap, path)
+        loaded = load_snapshot(path)
+        assert loaded.entries[0]["entry_id"] == "j1"
+        assert loaded.entries[1]["warnings"] == ["frequent"]
 
     def test_load_missing_file_raises(self, tmp_path):
         with pytest.raises(SnapshotError):
